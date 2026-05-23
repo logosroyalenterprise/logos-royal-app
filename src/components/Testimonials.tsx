@@ -71,7 +71,7 @@ export function Testimonials() {
         {visible.map((t, i) => (
           <div key={i} className="relative rounded-2xl bg-blue-50 dark:bg-blue-950/20 px-6 pt-16 pb-6 flex flex-col justify-between min-h-44">
             <span
-              className="absolute -top-6 -left-1 leading-none select-none text-blue-200 dark:text-blue-800"
+              className="absolute -top-6 -left-1 leading-none select-none text-blue-200 dark:text-blue-950/40"
               style={{ fontSize: '180px', fontFamily: 'Georgia, serif' }}
             >
               {OPEN_QUOTE}

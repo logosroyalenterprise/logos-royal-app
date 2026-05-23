@@ -84,27 +84,17 @@ export function ProductCard({ product, sectionTitle, index, deal }: { product: P
             <p className="text-xs font-medium text-black dark:text-white leading-snug line-clamp-2 min-h-10">{product.name}</p>
             <div className="flex items-center justify-between mt-0.5">
               <div className="flex items-baseline gap-1.5 flex-wrap">
-                {(() => {
-                  const price = deal ? convert(deal.salePrice) : convert(product.price);
-                  const long = price.length > 10;
-                  return <p className={`font-bold text-black dark:text-white ${long ? "text-xs" : "text-sm sm:text-base"}`}>{price}</p>;
-                })()}
+                <p className="text-base font-bold text-black dark:text-white">{deal ? convert(deal.salePrice) : convert(product.price)}</p>
                 {deal && <p className="text-[10px] text-gray-400 line-through">{convert(product.price)}</p>}
                 {deal && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400">-{deal.discountPct}%</span>}
               </div>
-              {(() => {
-                const price = deal ? convert(deal.salePrice) : convert(product.price);
-                const long = price.length > 10;
-                return (
-                  <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-black dark:text-white leading-none shrink-0">
-                    <span className="relative flex items-center justify-center w-1.5 h-1.5">
-                      {product.inStock && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
-                      <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${product.inStock ? "bg-emerald-500" : "bg-red-400"}`} />
-                    </span>
-                    {!long && (product.inStock ? "In stock" : "Sold out")}
-                  </span>
-                );
-              })()}
+              <span className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-black dark:text-white leading-none shrink-0">
+                <span className="relative flex items-center justify-center w-1.5 h-1.5">
+                  {product.inStock && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${product.inStock ? "bg-emerald-500" : "bg-red-400"}`} />
+                </span>
+                <span className="hidden sm:inline">{product.inStock ? "In stock" : "Sold out"}</span>
+              </span>
             </div>
           </div>
         </div>
