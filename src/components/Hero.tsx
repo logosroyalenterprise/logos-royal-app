@@ -40,7 +40,7 @@ export function Hero() {
   }
 
   return (
-    <section className="relative w-full pt-44 pb-0 sm:pt-52 sm:pb-0 px-6 sm:px-8 lg:px-12 flex flex-col items-center justify-center">
+    <section className="relative z-10 w-full pt-44 pb-0 sm:pt-52 sm:pb-0 px-6 sm:px-8 lg:px-12 flex flex-col items-center justify-center">
       {/* Radial glow behind search */}
       <div className="pointer-events-none absolute top-0 left-0 right-0 -bottom-48 overflow-hidden" aria-hidden="true">
         {/* Center bloom */}
