@@ -172,7 +172,7 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
   return (
     <>
       <Header />
-      <div className="pointer-events-none fixed top-0 left-0 right-0 h-125 z-0" aria-hidden="true">
+      <div className="pointer-events-none fixed top-0 left-0 right-0 h-125 z-0 overflow-hidden" aria-hidden="true">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 translate-y-[-35%] w-175 h-87.5 rounded-full bg-blue-300/20 dark:bg-blue-500/10 blur-3xl" />
       </div>
 
@@ -198,22 +198,22 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
             {/* ── 2-col hero ── */}
             <div className="grid lg:grid-cols-[1.6fr_1fr] gap-10 items-start">
 
-              {/* Col 1: thumbnail strip + main image */}
-              <div className="flex gap-3">
-                <div className="flex flex-col gap-2">
+              {/* Col 1: main image + thumbnails */}
+              <div className="flex flex-col gap-3">
+                <div className={`relative w-full aspect-square rounded-3xl overflow-hidden ${product.bg} [box-shadow:0_0_40px_rgba(147,197,253,0.18)]`}>
+                  <Image src={imgs[activeImg]} alt={product.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 45vw" priority />
+                  <span className="absolute bottom-4 left-4 text-[9px] font-semibold uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm text-blue-950 dark:text-blue-100">
+                    {product.category}
+                  </span>
+                </div>
+                <div className="flex gap-2">
                   {imgs.slice(0, 4).map((src, i) => (
                     <button key={i} onClick={() => setActiveImg(i)}
-                      className={`relative w-16 aspect-square rounded-xl overflow-hidden ${product.bg} transition-all duration-150 ${activeImg === i ? "ring-2 ring-blue-950 dark:ring-blue-200 ring-offset-2" : "opacity-60 hover:opacity-100"}`}
+                      className={`relative flex-1 aspect-square rounded-xl overflow-hidden ${product.bg} transition-all duration-150 ${activeImg === i ? "ring-2 ring-blue-950 dark:ring-blue-200 ring-offset-2" : "opacity-60 hover:opacity-100"}`}
                     >
                       <Image src={src} alt={`${product.name} view ${i + 1}`} fill className="object-cover" sizes="80px" />
                     </button>
                   ))}
-                </div>
-                <div className={`relative flex-1 aspect-square rounded-3xl overflow-hidden ${product.bg} [box-shadow:0_0_40px_rgba(147,197,253,0.18)]`}>
-                  <Image src={imgs[activeImg]} alt={product.name} fill className="object-cover" sizes="45vw" priority />
-                  <span className="absolute bottom-4 left-4 text-[9px] font-semibold uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm text-blue-950 dark:text-blue-100">
-                    {product.category}
-                  </span>
                 </div>
               </div>
 
@@ -230,21 +230,23 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
 
                 <h1 className="text-2xl sm:text-3xl font-bold tracking-tight leading-tight">{product.name}</h1>
 
-                <div className="flex items-center gap-3">
-                  <p className="text-3xl font-black">{convert(product.price)}</p>
-                  {currencyCode !== "USD" && <p className="text-xs text-gray-400">{product.price} USD</p>}
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p className="text-3xl font-black">{convert(product.price)}</p>
+                    {currencyCode !== "USD" && <p className="text-xs text-gray-400">{product.price} USD</p>}
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex w-2 h-2">
+                        {product.inStock && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
+                        <span className={`w-2 h-2 rounded-full ${product.inStock ? "bg-emerald-500" : "bg-red-400"}`} />
+                      </span>
+                      <span className="text-xs text-gray-500">{product.inStock ? "In stock" : "Out of stock"}</span>
+                    </div>
+                  </div>
                   {shippingFee !== null && (
                     <span className="text-xs text-gray-400">
                       {shippingFee > 0 ? `+ GH₵${shippingFee.toFixed(2)} shipping` : "Free shipping"}
                     </span>
                   )}
-                  <div className="flex items-center gap-1.5">
-                    <span className="relative flex w-2 h-2">
-                      {product.inStock && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}
-                      <span className={`w-2 h-2 rounded-full ${product.inStock ? "bg-emerald-500" : "bg-red-400"}`} />
-                    </span>
-                    <span className="text-xs text-gray-500">{product.inStock ? "In stock" : "Out of stock"}</span>
-                  </div>
                 </div>
 
                 <p className="text-sm sm:text-[15px] text-gray-500 dark:text-gray-400 leading-relaxed">{product.description}</p>

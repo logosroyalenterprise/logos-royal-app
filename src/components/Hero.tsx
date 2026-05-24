@@ -1,16 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { FloatingCards } from "@/components/FloatingCards";
+import { createClient } from "@/lib/supabase/client";
+
 export function Hero() {
   const [searchQuery, setSearchQuery] = useState("");
   const [scrolled, setScrolled] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 80);
     window.addEventListener("scroll", handler, { passive: true });
     return () => window.removeEventListener("scroll", handler);
   }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = searchQuery.trim();
+    if (q.length < 2) { setSuggestions([]); return; }
+    debounceRef.current = setTimeout(async () => {
+      const supabase = createClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase.from("products") as any)
+        .select("name")
+        .ilike("name", `%${q}%`)
+        .eq("published", true)
+        .limit(6);
+      setSuggestions((data ?? []).map((p: { name: string }) => p.name));
+    }, 250);
+  }, [searchQuery]);
+
+  function submit(q: string) {
+    setSuggestions([]);
+    router.push(`/shop?q=${encodeURIComponent(q.trim())}`);
+  }
 
   return (
     <section className="relative w-full pt-44 pb-0 sm:pt-52 sm:pb-0 px-6 sm:px-8 lg:px-12 flex flex-col items-center justify-center">
@@ -58,14 +85,30 @@ export function Hero() {
             placeholder="Search for something..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && searchQuery.trim() && submit(searchQuery)}
             className="w-full pl-6 pr-24 py-4 rounded-full bg-white/20 dark:bg-gray-900/20 backdrop-blur-sm border-2 border-blue-950 dark:border-blue-200 text-sm sm:text-base font-normal focus:outline-none focus:border-[3px] focus:scale-[1.01] transition-all"
           />
           <button
             className="absolute right-2 top-1/2 -translate-y-1/2 px-4 sm:px-5 py-2.5 bg-blue-300 hover:bg-blue-400 dark:bg-blue-700 dark:hover:bg-blue-600 text-blue-950 dark:text-blue-50 text-sm font-semibold rounded-full transition-colors"
-            onClick={() => console.log("Search:", searchQuery)}
+            onClick={() => searchQuery.trim() && submit(searchQuery)}
           >
             Shop
           </button>
+
+          {suggestions.length > 0 && (
+            <ul className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-900 rounded-2xl overflow-hidden [box-shadow:0_4px_24px_rgba(0,0,0,0.10)] z-50">
+              {suggestions.map((s) => (
+                <li key={s}>
+                  <button
+                    className="w-full text-left px-5 py-3 text-sm text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                    onMouseDown={() => { setSearchQuery(s); submit(s); }}
+                  >
+                    {s}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
     </section>
