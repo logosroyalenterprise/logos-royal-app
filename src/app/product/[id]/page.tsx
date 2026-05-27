@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { headers, cookies } from "next/headers";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { ALL_PRODUCTS } from "@/data/products";
+import { ALL_PRODUCTS, type Product, mapDbToProduct } from "@/data/products";
 import { ProductDetail } from "@/components/ProductDetail";
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/server";
@@ -10,6 +10,18 @@ import { isAccessible, sanitizeCountry } from "@/lib/geo";
 
 // force-dynamic so headers() works — needed for geo check on every request
 export const dynamic = "force-dynamic";
+
+async function resolveProduct(id: string, supabase: Awaited<ReturnType<typeof import("@/lib/supabase/server").createClient>>): Promise<Product | null> {
+  const static_ = ALL_PRODUCTS.find((p) => p.id === id);
+  if (static_) return static_;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data } = await (supabase.from("products") as any)
+    .select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs")
+    .eq("id", id)
+    .eq("published", true)
+    .maybeSingle();
+  return data ? mapDbToProduct(data) : null;
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -28,7 +40,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const product = ALL_PRODUCTS.find((p) => p.id === id);
+  const supabase = await createClient();
+  const product = await resolveProduct(id, supabase);
   if (!product) notFound();
 
   const cookieStore = await cookies();
@@ -39,7 +52,6 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     sanitizeCountry(process.env.NEXT_PUBLIC_GEO_TEST_COUNTRY ?? null) ??
     sanitizeCountry(process.env.GEO_TEST_COUNTRY ?? null);
 
-  const supabase = await createClient();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: dbProduct } = await (supabase
     .from("products")

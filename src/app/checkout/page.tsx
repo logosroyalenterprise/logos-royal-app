@@ -7,7 +7,7 @@ import Image from "next/image";
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/client";
 import { useUserData } from "@/context/UserDataContext";
-import { ALL_PRODUCTS } from "@/data/products";
+import { ALL_PRODUCTS, mapDbToProduct, type Product } from "@/data/products";
 import { initializePayment } from "./actions";
 import { sanitizeCountry } from "@/lib/geo";
 
@@ -46,6 +46,8 @@ function CheckoutInner() {
   const searchParams = useSearchParams();
   const { user } = useUserData();
   const [items, setItems] = useState<BagItem[]>([]);
+  const [dbProductsMap, setDbProductsMap] = useState<Record<string, Product>>({});
+  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string | "new">("new");
   const [newAddr, setNewAddr] = useState({ full_name: "", line1: "", city: "", state: "", postal_code: "" });
@@ -64,6 +66,21 @@ function CheckoutInner() {
       sanitizeCountry(process.env.NEXT_PUBLIC_GEO_TEST_COUNTRY ?? null)
     );
   }, []);
+
+  useEffect(() => {
+    if (!items.length) return;
+    const supabase = createClient();
+    const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+    const missing = [...new Set(items.map((i) => i.product_id))].filter((id) => !staticIds.has(id));
+    if (!missing.length) return;
+    setEnrichmentLoading(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase.from("products").select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count").in("id", missing) as any)
+      .then(({ data }: { data: unknown[] | null }) => {
+        if (data) setDbProductsMap(Object.fromEntries((data as Parameters<typeof mapDbToProduct>[0][]).map((p) => [p.id, mapDbToProduct(p)])));
+        setEnrichmentLoading(false);
+      });
+  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!user || items.length === 0) return;
@@ -95,7 +112,7 @@ function CheckoutInner() {
 
   const enriched = items.map((item) => ({
     ...item,
-    product: ALL_PRODUCTS.find((p) => p.id === item.product_id),
+    product: ALL_PRODUCTS.find((p) => p.id === item.product_id) ?? dbProductsMap[item.product_id],
   })).filter((i) => i.product);
 
   const subtotal = enriched.reduce((sum, i) => {
@@ -137,7 +154,7 @@ function CheckoutInner() {
     }
   }
 
-  if (loading) {
+  if (loading || enrichmentLoading) {
     return (
       <>
         <Header />
@@ -288,7 +305,7 @@ function CheckoutInner() {
                   {enriched.map(({ id, product, quantity, color, size }) => (
                     <div key={id} className="flex items-center gap-3">
                       <div className={`relative w-12 h-12 shrink-0 rounded-xl overflow-hidden ${product!.bg}`}>
-                        <Image src={product!.img} alt={product!.name} fill className="object-cover" sizes="48px" />
+                        {product!.img && <Image src={product!.img} alt={product!.name} fill className="object-cover" sizes="48px" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-1">{product!.name}</p>
@@ -325,7 +342,7 @@ function CheckoutInner() {
                     {enriched.map(({ id, product, quantity, color, size }) => (
                       <div key={id} className="flex items-center gap-3">
                         <div className={`relative w-10 h-10 shrink-0 rounded-lg overflow-hidden ${product!.bg}`}>
-                          <Image src={product!.img} alt={product!.name} fill className="object-cover" sizes="40px" />
+                          {product!.img && <Image src={product!.img} alt={product!.name} fill className="object-cover" sizes="40px" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-gray-900 dark:text-gray-100 line-clamp-1">{product!.name}</p>

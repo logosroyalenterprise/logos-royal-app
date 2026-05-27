@@ -3,12 +3,10 @@
 import { Suspense, useState, useMemo, useEffect, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
-import { ProductCard } from "@/components/FeaturedProducts";
-import { ALL_PRODUCTS } from "@/data/products";
+import { ProductCard, ProductCardSkeleton } from "@/components/FeaturedProducts";
+import { ALL_PRODUCTS, type Product, mapDbToProduct } from "@/data/products";
 import { createClient } from "@/lib/supabase/client";
 import { isAccessible, sanitizeCountry } from "@/lib/geo";
-
-const ALL_CATEGORIES = Array.from(new Set(ALL_PRODUCTS.map((p) => p.category)));
 
 interface FilterGroup { key: string; label: string; options: string[] }
 interface SubCategoryDef { name: string; filters: FilterGroup[] }
@@ -257,9 +255,7 @@ function parseURLFilters(sp: URLSearchParams): { filters: Filters; query: string
   const price = sp.get("price");
   const rating = sp.get("rating");
   if (cat) {
-    const cats = cat.split("|")
-      .map((c) => ALL_CATEGORIES.find((x) => x.toLowerCase().includes(c.toLowerCase())))
-      .filter(Boolean) as string[];
+    const cats = cat.split("|").filter(Boolean);
     if (cats.length) f = { ...f, categories: cats };
   }
   if (sub)    f = { ...f, subCategory: sub };
@@ -332,10 +328,10 @@ function FilterChips({ filters, searchQuery, sort, onChange, onClearSearch, onCl
   );
 }
 
-function FilterPanel({ filters, onChange, onClose, categoryCounts, effectiveSubCat, sort, onSortChange }: {
+function FilterPanel({ filters, onChange, onClose, categoryCounts, effectiveSubCat, sort, onSortChange, categories }: {
   filters: Filters; onChange: (f: Filters) => void; onClose?: () => void;
   categoryCounts: Record<string, number>; effectiveSubCat: string | null;
-  sort?: string; onSortChange?: (s: string) => void;
+  sort?: string; onSortChange?: (s: string) => void; categories: string[];
 }) {
   const toggle = (cat: string) => {
     const cats = filters.categories.includes(cat)
@@ -401,7 +397,7 @@ function FilterPanel({ filters, onChange, onClose, categoryCounts, effectiveSubC
       <div>
         <p className="text-xs font-semibold text-gray-400 mb-3">Category</p>
         <div className="flex flex-col gap-2">
-          {ALL_CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const n = categoryCounts[cat] ?? 0; const checked = filters.categories.includes(cat);
             return (
               <label key={cat} className={`flex items-center gap-3 cursor-pointer group ${n === 0 && !checked ? "opacity-40" : ""}`} onClick={() => toggle(cat)}>
@@ -499,6 +495,27 @@ function ShopContent() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const count = activeCount(filters);
 
+  // Products from Supabase (admin-created, not in static array)
+  const [dbProducts, setDbProducts] = useState<Product[]>([]);
+  const [dbLoading, setDbLoading] = useState(true);
+  useEffect(() => {
+    const supabase = createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase.from("products") as any)
+      .select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count")
+      .eq("published", true)
+      .then(({ data }: { data: any[] | null }) => {
+        if (data) {
+          const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+          setDbProducts(data.filter((p) => !staticIds.has(p.id)).map(mapDbToProduct));
+        }
+        setDbLoading(false);
+      });
+  }, []);
+
+  const allProducts = useMemo(() => [...ALL_PRODUCTS, ...dbProducts], [dbProducts]);
+  const allCategories = useMemo(() => Array.from(new Set(allProducts.map((p) => p.category))), [allProducts]);
+
   // Real ratings from Supabase (overrides static mock data)
   const [ratingsMap, setRatingsMap] = useState<Map<string, { rating: number; count: number }>>(new Map());
   useEffect(() => {
@@ -559,7 +576,7 @@ function ShopContent() {
   const inferredSubCat = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return null;
-    const matches = ALL_PRODUCTS.filter((p) => p.name.toLowerCase().includes(q) || (p.subCategory ?? "").toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+    const matches = allProducts.filter((p) => p.name.toLowerCase().includes(q) || (p.subCategory ?? "").toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
     if (matches.length === 0) return null;
     const subCats = new Set(matches.map((p) => p.subCategory).filter(Boolean));
     return subCats.size === 1 ? (Array.from(subCats)[0] as string) : null;
@@ -568,7 +585,7 @@ function ShopContent() {
   const effectiveSubCat = filters.subCategory ?? inferredSubCat;
 
   const categoryCounts = useMemo(() => Object.fromEntries(
-    ALL_CATEGORIES.map((cat) => [cat, ALL_PRODUCTS.filter((p) => {
+    allCategories.map((cat) => [cat, allProducts.filter((p) => {
       if (blockedIds.has(p.id)) return false;
       if (p.category !== cat) return false;
       const q = searchQuery.trim().toLowerCase();
@@ -582,11 +599,11 @@ function ShopContent() {
       }
       return true;
     }).length])
-  ), [searchQuery, filters.inStockOnly, filters.minRating, filters.priceRange, filters.customMin, filters.customMax]);
+  ), [allCategories, allProducts, blockedIds, searchQuery, filters.inStockOnly, filters.minRating, filters.priceRange, filters.customMin, filters.customMax]);
 
   const products = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    let list = ALL_PRODUCTS.filter((p) => {
+    let list = allProducts.filter((p) => {
       if (blockedIds.has(p.id)) return false;
       if (q && !p.name.toLowerCase().includes(q) && !(p.subCategory ?? "").toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
       if (filters.categories.length && !filters.categories.includes(p.category)) return false;
@@ -619,7 +636,7 @@ function ShopContent() {
         <div className="fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setDrawerOpen(false)} />
           <div className="relative ml-auto w-80 h-full bg-white dark:bg-gray-950 overflow-y-auto p-6 [box-shadow:-8px_0_40px_rgba(0,0,0,0.12)]">
-            <FilterPanel filters={filters} onChange={setFilters} onClose={() => setDrawerOpen(false)} categoryCounts={categoryCounts} effectiveSubCat={effectiveSubCat} sort={sort} onSortChange={setSort} />
+            <FilterPanel filters={filters} onChange={setFilters} onClose={() => setDrawerOpen(false)} categoryCounts={categoryCounts} effectiveSubCat={effectiveSubCat} sort={sort} onSortChange={setSort} categories={allCategories} />
           </div>
         </div>
       )}
@@ -661,7 +678,7 @@ function ShopContent() {
           <div className="flex gap-10 items-start">
             <aside className="hidden lg:block w-52 shrink-0 sticky top-28">
               <p className="text-sm font-semibold mb-6">Filters{count > 0 && <span className="ml-2 px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-950 dark:bg-blue-200 text-white dark:text-blue-950">{count}</span>}</p>
-              <FilterPanel filters={filters} onChange={setFilters} categoryCounts={categoryCounts} effectiveSubCat={effectiveSubCat} />
+              <FilterPanel filters={filters} onChange={setFilters} categoryCounts={categoryCounts} effectiveSubCat={effectiveSubCat} categories={allCategories} />
             </aside>
             <div className="flex-1 min-w-0">
               {geoHiddenCount > 0 && (
@@ -670,7 +687,11 @@ function ShopContent() {
                   <a href="/settings" className="underline font-medium">Update your browse location in Settings</a> to see more.
                 </div>
               )}
-              {products.length === 0 ? (
+              {dbLoading && products.length === 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {Array.from({ length: 8 }).map((_, i) => <ProductCardSkeleton key={i} />)}
+                </div>
+              ) : products.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-24 gap-3">
                   <p className="text-2xl sm:text-3xl font-semibold tracking-tight">Oopsie!</p>
                   <p className="text-sm text-gray-500">{searchQuery ? `We couldn't find anything for "${searchQuery}".` : "We couldn't find anything matching those filters."}</p>

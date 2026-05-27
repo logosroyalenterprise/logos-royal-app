@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Header } from "@/components/Header";
-import { ALL_PRODUCTS, type Product } from "@/data/products";
+import { ALL_PRODUCTS, mapDbToProduct, type Product } from "@/data/products";
 import { FeaturedProducts } from "@/components/FeaturedProducts";
 import { useUserData } from "@/context/UserDataContext";
 import { createClient } from "@/lib/supabase/client";
@@ -81,7 +81,24 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
   const [bagFeedback, setBagFeedback] = useState(false);
   const imgs = product.images?.length ? product.images : [product.img, product.img, product.img, product.img];
   const [activeImg, setActiveImg] = useState(0);
-  const related = ALL_PRODUCTS.filter((p) => p.id !== product.id).slice(0, 3);
+  const initialRelated = ALL_PRODUCTS.filter((p) => p.id !== product.id).slice(0, 3);
+  const [related, setRelated] = useState<Product[]>(initialRelated);
+  const [relatedLoading, setRelatedLoading] = useState(initialRelated.length === 0);
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((supabase.from("products") as any).select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count").eq("published", true).neq("id", product.id).limit(6))
+      .then(({ data }: { data: unknown[] | null }) => {
+        if (data?.length) {
+          const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+          const mapped = (data as Parameters<typeof mapDbToProduct>[0][]).map((p) =>
+            staticIds.has(p.id) ? ALL_PRODUCTS.find((sp) => sp.id === p.id)! : mapDbToProduct(p)
+          );
+          setRelated(mapped.filter((p) => p.id !== product.id).slice(0, 3));
+        }
+        setRelatedLoading(false);
+      });
+  }, [product.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [shippingFee, setShippingFee] = useState<number | null>(null);
 
@@ -201,7 +218,7 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
               {/* Col 1: main image + thumbnails */}
               <div className="flex flex-col gap-3">
                 <div className={`relative w-full aspect-square rounded-3xl overflow-hidden ${product.bg} [box-shadow:0_0_40px_rgba(147,197,253,0.18)]`}>
-                  <Image src={imgs[activeImg]} alt={product.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 45vw" priority />
+                  {imgs[activeImg] && <Image src={imgs[activeImg]} alt={product.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 45vw" priority />}
                   <span className="absolute bottom-4 left-4 text-[9px] font-semibold uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm text-blue-950 dark:text-blue-100">
                     {product.category}
                   </span>
@@ -209,9 +226,10 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
                 <div className="flex gap-2">
                   {imgs.slice(0, 4).map((src, i) => (
                     <button key={i} onClick={() => setActiveImg(i)}
-                      className={`relative flex-1 aspect-square rounded-xl overflow-hidden ${product.bg} transition-all duration-150 ${activeImg === i ? "ring-2 ring-blue-950 dark:ring-blue-200 ring-offset-2" : "opacity-60 hover:opacity-100"}`}
+                      style={{ WebkitTapHighlightColor: "transparent", outline: "none" }}
+                      className={`relative flex-1 aspect-square rounded-xl overflow-hidden ${product.bg} transition-opacity duration-150 ${activeImg === i ? "ring-2 ring-blue-950 dark:ring-blue-200" : "opacity-60 hover:opacity-100"}`}
                     >
-                      <Image src={src} alt={`${product.name} view ${i + 1}`} fill className="object-cover" sizes="80px" />
+                      {src && <Image src={src} alt={`${product.name} view ${i + 1}`} fill className="object-cover" sizes="80px" />}
                     </button>
                   ))}
                 </div>
@@ -255,8 +273,8 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
                   <div>
                     <p className="text-xs text-gray-400 mb-2">Color: <span className="text-gray-700 dark:text-gray-300 font-semibold">{selectedColor}</span></p>
                     <div className="flex gap-2.5">
-                      {product.colors.map((c) => (
-                        <button key={c.name} title={c.name} onClick={() => setSelectedColor(c.name)}
+                      {product.colors.map((c, i) => (
+                        <button key={`${c.name}-${i}`} title={c.name} onClick={() => setSelectedColor(c.name)}
                           className="w-7 h-7 rounded-full transition-all duration-150"
                           style={{ backgroundColor: c.hex, outline: selectedColor === c.name ? "2.5px solid #0a0a2e" : "2.5px solid transparent", outlineOffset: "3px" }}
                         />
@@ -322,7 +340,7 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
         </div>
 
         {/* Related products */}
-        <FeaturedProducts title="You might also like" order={related.map((p) => p.id)} className="bg-gray-100 dark:bg-gray-900" />
+        <FeaturedProducts title="You might also like" products={related} loading={relatedLoading} className="bg-gray-100 dark:bg-gray-900" />
 
         {/* Reviews */}
         <section id="reviews" className="bg-gray-100 dark:bg-gray-900 pt-12 pb-10">

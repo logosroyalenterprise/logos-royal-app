@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/client";
 import { useUserData } from "@/context/UserDataContext";
-import { ALL_PRODUCTS } from "@/data/products";
+import { ALL_PRODUCTS, mapDbToProduct, type Product } from "@/data/products";
 
 interface BagItem {
   id: string;
@@ -23,6 +23,8 @@ export default function BagPage() {
   const [items, setItems] = useState<BagItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [supabase] = useState(() => createClient());
+  const [dbProductsMap, setDbProductsMap] = useState<Record<string, Product>>({});
+  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
 
   async function fetchItems() {
     if (!user) { setLoading(false); return; }
@@ -36,6 +38,20 @@ export default function BagPage() {
   }
 
   useEffect(() => { fetchItems(); }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!items.length) return;
+    const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+    const missing = [...new Set(items.map((i) => i.product_id))].filter((id) => !staticIds.has(id));
+    if (!missing.length) return;
+    setEnrichmentLoading(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase.from("products").select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count").in("id", missing) as any)
+      .then(({ data }: { data: unknown[] | null }) => {
+        if (data) setDbProductsMap(Object.fromEntries((data as Parameters<typeof mapDbToProduct>[0][]).map((p) => [p.id, mapDbToProduct(p)])));
+        setEnrichmentLoading(false);
+      });
+  }, [items]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function updateQty(id: string, delta: number, current: number) {
     const next = current + delta;
@@ -57,7 +73,7 @@ export default function BagPage() {
 
   const enriched = items.map((item) => ({
     ...item,
-    product: ALL_PRODUCTS.find((p) => p.id === item.product_id),
+    product: ALL_PRODUCTS.find((p) => p.id === item.product_id) ?? dbProductsMap[item.product_id],
   })).filter((i) => i.product);
 
   const subtotal = enriched.reduce((sum, i) => {
@@ -65,7 +81,7 @@ export default function BagPage() {
     return sum + price * i.quantity;
   }, 0);
 
-  if (loading) {
+  if (loading || enrichmentLoading) {
     return (
       <>
         <Header />
@@ -133,7 +149,7 @@ export default function BagPage() {
                   onClick={() => router.push(`/product/${product!.id}`)}
                   className={`relative w-20 h-20 shrink-0 rounded-xl overflow-hidden ${product!.bg}`}
                 >
-                  <Image src={product!.img} alt={product!.name} fill className="object-cover" sizes="80px" />
+                  {product!.img && <Image src={product!.img} alt={product!.name} fill className="object-cover" sizes="80px" />}
                 </button>
 
                 <div className="flex-1 min-w-0 flex flex-col gap-1.5">

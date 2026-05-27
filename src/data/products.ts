@@ -196,3 +196,34 @@ export const ALL_PRODUCTS: Product[] = [
 export const TRENDING     = ["headphone", "crossbag", "sweater", "serum", "lamp", "coffee"];
 export const BEST_SELLING = ["sweater", "serum", "headphone", "lamp", "coffee", "crossbag"];
 export const NEW_ARRIVALS = ["lamp", "serum", "crossbag", "coffee", "headphone", "sweater"];
+
+export const CATEGORY_BG: Record<string, string> = {
+  "Tech & Gadgets": "bg-blue-50 dark:bg-blue-950/40",
+  "Fashion":        "bg-purple-50 dark:bg-purple-950/40",
+  "Beauty":         "bg-pink-50 dark:bg-pink-950/40",
+  "Home & Living":  "bg-amber-50 dark:bg-amber-950/40",
+  "Footwear":       "bg-green-50 dark:bg-green-950/40",
+  "Bags":           "bg-orange-50 dark:bg-orange-950/40",
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapDbToProduct(p: any): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    subCategory: p.sub_category ?? undefined,
+    price: String(p.price),
+    img: p.img ?? "",
+    images: p.images ?? undefined,
+    rating: Number(p.rating ?? 0),
+    reviews: Number(p.review_count ?? 0),
+    bg: CATEGORY_BG[p.category] ?? "bg-gray-50 dark:bg-gray-900/40",
+    inStock: p.in_stock ?? false,
+    description: p.description ?? "",
+    colors: Array.isArray(p.colors) ? p.colors : undefined,
+    sizes: p.sizes?.length ? p.sizes : undefined,
+    highlights: p.highlights ?? [],
+    attrs: p.attrs ?? undefined,
+  };
+}

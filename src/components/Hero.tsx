@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 export function Hero() {
   const [searchQuery, setSearchQuery] = useState("");
   const [scrolled, setScrolled] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<{ id: string; name: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
 
@@ -26,11 +26,11 @@ export function Hero() {
       const supabase = createClient();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase.from("products") as any)
-        .select("name")
+        .select("id, name")
         .ilike("name", `%${q}%`)
         .eq("published", true)
         .limit(6);
-      setSuggestions((data ?? []).map((p: { name: string }) => p.name));
+      setSuggestions((data ?? []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })));
     }, 250);
   }, [searchQuery]);
 
@@ -98,12 +98,12 @@ export function Hero() {
           {suggestions.length > 0 && (
             <ul className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-900 rounded-2xl overflow-hidden [box-shadow:0_4px_24px_rgba(0,0,0,0.10)] z-999">
               {suggestions.map((s) => (
-                <li key={s}>
+                <li key={s.id}>
                   <button
                     className="w-full text-left px-5 py-3 text-sm text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
-                    onMouseDown={() => { setSearchQuery(s); submit(s); }}
+                    onMouseDown={() => { setSuggestions([]); router.push(`/product/${s.id}`); }}
                   >
-                    {s}
+                    {s.name}
                   </button>
                 </li>
               ))}

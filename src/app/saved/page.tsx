@@ -1,15 +1,37 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Header } from "@/components/Header";
 import { useUserData } from "@/context/UserDataContext";
-import { ALL_PRODUCTS } from "@/data/products";
-import { ProductCard } from "@/components/FeaturedProducts";
+import { ALL_PRODUCTS, mapDbToProduct, type Product } from "@/data/products";
+import { ProductCard, ProductCardSkeleton } from "@/components/FeaturedProducts";
+import { createClient } from "@/lib/supabase/client";
 
 export default function SavedPage() {
   const { user, savedIds } = useUserData();
+  const [dbSaved, setDbSaved] = useState<Product[]>([]);
+  const [dbLoading, setDbLoading] = useState(savedIds.size > 0);
 
-  const savedProducts = ALL_PRODUCTS.filter((p) => savedIds.has(p.id));
+  useEffect(() => {
+    if (!savedIds.size) { setDbLoading(false); return; }
+    const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+    const missing = [...savedIds].filter((id) => !staticIds.has(id));
+    if (!missing.length) { setDbSaved([]); setDbLoading(false); return; }
+    setDbLoading(true);
+    const supabase = createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((supabase.from("products") as any).select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count").in("id", missing).eq("published", true))
+      .then(({ data }: { data: unknown[] | null }) => {
+        setDbSaved(data ? (data as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct) : []);
+        setDbLoading(false);
+      });
+  }, [savedIds]);
+
+  const savedProducts = [
+    ...ALL_PRODUCTS.filter((p) => savedIds.has(p.id)),
+    ...dbSaved,
+  ];
 
   if (!user) {
     return (
@@ -25,7 +47,7 @@ export default function SavedPage() {
     );
   }
 
-  if (savedProducts.length === 0) {
+  if (!dbLoading && savedProducts.length === 0) {
     return (
       <>
         <Header />
@@ -55,12 +77,15 @@ export default function SavedPage() {
       <Header />
       <main className="pt-28 pb-24 px-6 sm:px-8 lg:px-12 min-h-screen">
         <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-10">
-          Saved <span className="text-gray-400 font-normal text-xl">({savedProducts.length})</span>
+          Saved {!dbLoading && <span className="text-gray-400 font-normal text-xl">({savedProducts.length})</span>}
         </h1>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          {savedProducts.map((product, i) => (
-            <ProductCard key={product.id} product={product} sectionTitle="Saved" index={i} />
-          ))}
+          {dbLoading
+            ? Array.from({ length: savedIds.size || 4 }).map((_, i) => <ProductCardSkeleton key={i} />)
+            : savedProducts.map((product, i) => (
+                <ProductCard key={product.id} product={product} sectionTitle="Saved" index={i} />
+              ))
+          }
         </div>
       </main>
     </>

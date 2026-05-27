@@ -13,6 +13,19 @@ export type { Product };
 export { TRENDING, BEST_SELLING, NEW_ARRIVALS };
 
 
+export function ProductCardSkeleton() {
+  return (
+    <div className="rounded-2xl overflow-hidden animate-pulse">
+      <div className="w-full aspect-square bg-gray-100 dark:bg-gray-800" />
+      <div className="p-3 bg-white dark:bg-gray-950 flex flex-col gap-2">
+        <div className="h-3 rounded-full bg-gray-100 dark:bg-gray-800 w-4/5" />
+        <div className="h-3 rounded-full bg-gray-100 dark:bg-gray-800 w-2/3" />
+        <div className="h-4 rounded-full bg-gray-100 dark:bg-gray-800 w-1/3 mt-1" />
+      </div>
+    </div>
+  );
+}
+
 export function ProductCard({ product, sectionTitle, index, deal }: { product: Product; sectionTitle: string; index: number; deal?: { salePrice: string; discountPct: number } }) {
   const { savedIds, toggleSaved } = useUserData();
   const userCountry = useUserCountry();
@@ -51,13 +64,15 @@ export function ProductCard({ product, sectionTitle, index, deal }: { product: P
           onMouseLeave={handleMouseLeave}
         >
           <div className={`relative w-full aspect-square ${product.bg}`}>
-            <Image
-              src={product.img}
-              alt={product.name}
-              fill
-              className="object-cover group-hover:scale-105 transition-transform duration-300"
-              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
-            />
+            {product.img && (
+              <Image
+                src={product.img}
+                alt={product.name}
+                fill
+                className="object-cover group-hover:scale-105 transition-transform duration-300"
+                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
+              />
+            )}
 
             <span className="absolute bottom-2 left-2 text-[9px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm text-blue-950 dark:text-blue-100">
               {product.category}
@@ -106,18 +121,22 @@ export function ProductCard({ product, sectionTitle, index, deal }: { product: P
 interface Props {
   title: string;
   order?: string[];
+  products?: Product[];
+  loading?: boolean;
   className?: string;
 }
 
-export function FeaturedProducts({ title, order = TRENDING, className = "" }: Props) {
-  const rawProducts = order.map((id) => ALL_PRODUCTS.find((p) => p.id === id)!);
+export function FeaturedProducts({ title, order = TRENDING, products: productsProp, loading = false, className = "" }: Props) {
+  const rawProducts = productsProp ?? order.map((id) => ALL_PRODUCTS.find((p) => p.id === id)!).filter(Boolean);
   const [ratingsMap, setRatingsMap] = useState<Map<string, { rating: number; count: number }>>(new Map());
 
   useEffect(() => {
+    if (productsProp) return; // products from Supabase already carry their ratings
+    const ids = rawProducts.map((p) => p.id);
+    if (!ids.length) return;
     const supabase = createClient();
-    // Query actual reviews table — ignores stale seeded values in products.review_count
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase.from("reviews").select("product_id, rating").in("product_id", rawProducts.map((p) => p.id)) as any)
+    (supabase.from("reviews").select("product_id, rating").in("product_id", ids) as any)
       .then(({ data }: { data: { product_id: string; rating: number }[] | null }) => {
         if (!data) return;
         const map = new Map<string, { rating: number; count: number }>();
@@ -125,11 +144,10 @@ export function FeaturedProducts({ title, order = TRENDING, className = "" }: Pr
           const prev = map.get(r.product_id) ?? { rating: 0, count: 0 };
           map.set(r.product_id, { rating: prev.rating + r.rating, count: prev.count + 1 });
         }
-        // Average the ratings
         map.forEach((v, k) => map.set(k, { rating: Math.round((v.rating / v.count) * 10) / 10, count: v.count }));
         setRatingsMap(map);
       });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [productsProp, rawProducts.map((p) => p?.id).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const products = rawProducts.map((p) => {
     const real = ratingsMap.get(p.id);
@@ -144,9 +162,12 @@ export function FeaturedProducts({ title, order = TRENDING, className = "" }: Pr
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        {products.map((product, i) => (
-          <ProductCard key={`${title}-${product.id}`} product={product} sectionTitle={title} index={i} />
-        ))}
+        {loading || products.length === 0
+          ? Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)
+          : products.map((product, i) => (
+              <ProductCard key={`${title}-${product.id}`} product={product} sectionTitle={title} index={i} />
+            ))
+        }
       </div>
     </section>
   );
