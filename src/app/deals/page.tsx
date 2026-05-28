@@ -1,8 +1,9 @@
 import { Header } from "@/components/Header";
 import { ProductCard } from "@/components/FeaturedProducts";
 import { CountdownTimer } from "@/components/CountdownTimer";
-import { ALL_PRODUCTS } from "@/data/products";
-import { FLASH_DEALS, WEEKLY_DEALS, CLEARANCE_DEALS } from "@/data/deals";
+import { ALL_PRODUCTS, mapDbToProduct } from "@/data/products";
+import { FLASH_DEALS, WEEKLY_DEALS, CLEARANCE_DEALS, DEALS } from "@/data/deals";
+import { createClient } from "@/lib/supabase/server";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Deals" };
@@ -19,10 +20,24 @@ function SectionHeader({ title, sub, right }: { title: string; sub?: string; rig
   );
 }
 
-export default function DealsPage() {
-  const flashProducts  = FLASH_DEALS.map((d)     => ({ deal: d, product: ALL_PRODUCTS.find((p) => p.id === d.productId)! })).filter((x) => x.product);
-  const weeklyProducts = WEEKLY_DEALS.map((d)    => ({ deal: d, product: ALL_PRODUCTS.find((p) => p.id === d.productId)! })).filter((x) => x.product);
-  const clearProducts  = CLEARANCE_DEALS.map((d) => ({ deal: d, product: ALL_PRODUCTS.find((p) => p.id === d.productId)! })).filter((x) => x.product);
+export default async function DealsPage() {
+  // Fetch any deal products not in static array
+  const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+  const missingIds = [...new Set(DEALS.map((d) => d.productId))].filter((id) => !staticIds.has(id));
+  let dbProducts: ReturnType<typeof mapDbToProduct>[] = [];
+  if (missingIds.length) {
+    const supabase = await createClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data } = await ((supabase.from("products") as any).select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs").in("id", missingIds).eq("published", true));
+    dbProducts = data ? (data as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct) : [];
+  }
+  function findProduct(id: string) {
+    return ALL_PRODUCTS.find((p) => p.id === id) ?? dbProducts.find((p) => p.id === id);
+  }
+
+  const flashProducts  = FLASH_DEALS.map((d)     => ({ deal: d, product: findProduct(d.productId) })).filter((x) => x.product) as { deal: typeof FLASH_DEALS[0]; product: NonNullable<ReturnType<typeof findProduct>> }[];
+  const weeklyProducts = WEEKLY_DEALS.map((d)    => ({ deal: d, product: findProduct(d.productId) })).filter((x) => x.product) as { deal: typeof WEEKLY_DEALS[0]; product: NonNullable<ReturnType<typeof findProduct>> }[];
+  const clearProducts  = CLEARANCE_DEALS.map((d) => ({ deal: d, product: findProduct(d.productId) })).filter((x) => x.product) as { deal: typeof CLEARANCE_DEALS[0]; product: NonNullable<ReturnType<typeof findProduct>> }[];
 
   const flashDuration = FLASH_DEALS[0]?.flashDurationMs ?? 6 * 60 * 60 * 1000;
 

@@ -208,22 +208,45 @@ export function ProductForm({ action, initial, submitLabel = "Save Product" }: P
   const toggleSize = (s: string) =>
     setSizes((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
 
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  function validateImage(file: File): string | null {
+    if (!file.type.startsWith("image/") && !/\.(jpe?g|png|webp|gif|avif|heic|heif|svg)$/i.test(file.name))
+      return `"${file.name}" is not a recognised image format`;
+    if (file.size > 8 * 1024 * 1024)
+      return `"${file.name}" exceeds 8 MB`;
+    return null;
+  }
+
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
+    setUploadError(null);
     setUploading(true);
-    const supabase = createClient();
-    const urls: string[] = [];
-    for (const file of Array.from(files)) {
-      const path = `products/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-      const { error } = await supabase.storage.from("product-images").upload(path, file, { upsert: true });
-      if (!error) {
-        const { data } = supabase.storage.from("product-images").getPublicUrl(path);
-        urls.push(data.publicUrl);
+    try {
+      const fileArr = Array.from(files);
+      // Validate all before uploading any
+      for (const file of fileArr) {
+        const err = validateImage(file);
+        if (err) { setUploadError(err); return; }
       }
+      const supabase = createClient();
+      const results = await Promise.all(
+        fileArr.map(async (file) => {
+          const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+          const path = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+          const { error } = await supabase.storage.from("product-images").upload(path, file, { upsert: true, contentType: file.type });
+          if (error) { setUploadError(`Upload failed: ${error.message}`); return null; }
+          return supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
+        })
+      );
+      const urls = results.filter(Boolean) as string[];
+      setUploadedImages((prev) => [...prev, ...urls]);
+      if (!primaryImg && urls[0]) setPrimaryImg(urls[0]);
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
     }
-    setUploadedImages((prev) => [...prev, ...urls]);
-    if (!primaryImg && urls[0]) setPrimaryImg(urls[0]);
-    setUploading(false);
   };
 
   const submit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -345,7 +368,12 @@ export function ProductForm({ action, initial, submitLabel = "Save Product" }: P
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
           <p className="text-sm text-gray-500">{uploading ? "Uploading…" : "Click to upload images"}</p>
+          <p className="text-xs text-gray-400 mt-1">JPG, PNG, WebP, GIF — max 8 MB each</p>
         </label>
+
+        {uploadError && (
+          <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 rounded-lg px-3 py-2">{uploadError}</p>
+        )}
 
         {uploadedImages.length > 0 && (
           <div className="space-y-2">

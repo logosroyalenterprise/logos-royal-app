@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "api.dicebear.com" },
+      { protocol: "https", hostname: "*.supabase.co", pathname: "/storage/v1/object/public/**" },
     ],
   },
   allowedDevOrigins: ['jeneva-cruder-repellantly.ngrok-free.dev'],

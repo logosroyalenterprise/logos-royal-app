@@ -175,6 +175,14 @@ export async function confirmOrder(reference: string): Promise<{ orderId: string
     .insert(orderItemsData.map((i: typeof orderItemsData[0]) => ({ ...i, order_id: orderId })));
   if (itemsErr) throw new Error(`Order items failed: ${itemsErr.message}`);
 
+  // Increment buy_count per product (fire-and-forget — non-fatal)
+  void Promise.all(
+    orderItemsData.map((i: { product_id: string; quantity: number }) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase.rpc as any)("increment_buy_count", { p_id: i.product_id, amount: i.quantity })
+    )
+  );
+
   // 9. Clear bag
   await supabase.from("bag_items").delete().eq("user_id", user.id);
 

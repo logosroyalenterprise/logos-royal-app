@@ -79,8 +79,12 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0]?.name ?? null);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [bagFeedback, setBagFeedback] = useState(false);
-  const imgs = product.images?.length ? product.images : [product.img, product.img, product.img, product.img];
+  const imgs = product.images?.length
+    ? product.images
+    : product.img ? [product.img] : [];
   const [activeImg, setActiveImg] = useState(0);
+  const [imgErrors, setImgErrors] = useState<Record<number, boolean>>({});
+  const markImgError = (i: number) => setImgErrors((prev) => ({ ...prev, [i]: true }));
   const initialRelated = ALL_PRODUCTS.filter((p) => p.id !== product.id).slice(0, 3);
   const [related, setRelated] = useState<Product[]>(initialRelated);
   const [relatedLoading, setRelatedLoading] = useState(initialRelated.length === 0);
@@ -108,6 +112,9 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
       .then(({ data }: { data: { shipping_fee: number | null } | null }) => {
         if (data) setShippingFee(Number(data.shipping_fee ?? 0));
       });
+    // Track view — fire and forget
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabase.rpc as any)("increment_view_count", { p_id: product.id }).then(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reviews state
@@ -218,21 +225,36 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
               {/* Col 1: main image + thumbnails */}
               <div className="flex flex-col gap-3">
                 <div className={`relative w-full aspect-square rounded-3xl overflow-hidden ${product.bg} [box-shadow:0_0_40px_rgba(147,197,253,0.18)]`}>
-                  {imgs[activeImg] && <Image src={imgs[activeImg]} alt={product.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 45vw" priority />}
+                  {imgs[activeImg] && !imgErrors[activeImg] ? (
+                    <Image src={imgs[activeImg]} alt={product.name} fill className="object-cover" sizes="(max-width: 1024px) 100vw, 45vw" priority onError={() => markImgError(activeImg)} />
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-gray-400 dark:text-gray-600">
+                      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                      <span className="text-xs">No image</span>
+                    </div>
+                  )}
                   <span className="absolute bottom-4 left-4 text-[9px] font-semibold uppercase tracking-widest px-3 py-1.5 rounded-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm text-blue-950 dark:text-blue-100">
                     {product.category}
                   </span>
                 </div>
-                <div className="flex gap-2">
-                  {imgs.slice(0, 4).map((src, i) => (
-                    <button key={i} onClick={() => setActiveImg(i)}
-                      style={{ WebkitTapHighlightColor: "transparent", outline: "none" }}
-                      className={`relative flex-1 aspect-square rounded-xl overflow-hidden ${product.bg} transition-opacity duration-150 ${activeImg === i ? "ring-2 ring-blue-950 dark:ring-blue-200" : "opacity-60 hover:opacity-100"}`}
-                    >
-                      {src && <Image src={src} alt={`${product.name} view ${i + 1}`} fill className="object-cover" sizes="80px" />}
-                    </button>
-                  ))}
-                </div>
+                {imgs.length > 1 && (
+                  <div className="flex gap-2">
+                    {imgs.slice(0, 4).map((src, i) => (
+                      <button key={i} onClick={() => setActiveImg(i)}
+                        style={{ WebkitTapHighlightColor: "transparent", outline: "none" }}
+                        className={`relative flex-1 aspect-square rounded-xl overflow-hidden ${product.bg} transition-opacity duration-150 ${activeImg === i ? "ring-2 ring-blue-950 dark:ring-blue-200" : "opacity-60 hover:opacity-100"}`}
+                      >
+                        {src && !imgErrors[i] ? (
+                          <Image src={src} alt={`${product.name} view ${i + 1}`} fill className="object-cover" sizes="80px" onError={() => markImgError(i)} />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-gray-300 dark:text-gray-600">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Col 2: product info */}

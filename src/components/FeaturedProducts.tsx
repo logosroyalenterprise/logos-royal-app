@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { ALL_PRODUCTS, TRENDING, BEST_SELLING, NEW_ARRIVALS } from "@/data/products";
+import { ALL_PRODUCTS, TRENDING, BEST_SELLING, NEW_ARRIVALS, mapDbToProduct } from "@/data/products";
 import type { Product } from "@/data/products";
 import { useUserData } from "@/context/UserDataContext";
 import { createClient } from "@/lib/supabase/client";
@@ -118,20 +118,74 @@ export function ProductCard({ product, sectionTitle, index, deal }: { product: P
   );
 }
 
+type Strategy = "new-arrivals" | "trending" | "best-selling";
+
 interface Props {
   title: string;
   order?: string[];
   products?: Product[];
+  strategy?: Strategy;
   loading?: boolean;
   className?: string;
 }
 
-export function FeaturedProducts({ title, order = TRENDING, products: productsProp, loading = false, className = "" }: Props) {
-  const rawProducts = productsProp ?? order.map((id) => ALL_PRODUCTS.find((p) => p.id === id)!).filter(Boolean);
+const PRODUCT_SELECT = "id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count";
+
+export function FeaturedProducts({ title, order = TRENDING, products: productsProp, strategy, loading = false, className = "" }: Props) {
+  const [dbFetched, setDbFetched] = useState<Product[]>([]);
+  const [dbLoading, setDbLoading] = useState(true);
+
+  useEffect(() => {
+    if (productsProp) { setDbLoading(false); return; }
+    const supabase = createClient();
+
+    if (strategy) {
+      // Fetch days window from site_settings then query accordingly
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase.from("site_settings") as any).select("value").eq("key", "featured_days_window").maybeSingle()
+        .then(({ data: cfg }: { data: { value: string } | null }) => {
+          const days = Math.max(1, parseInt(cfg?.value ?? "30", 10) || 30);
+          const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let q = (supabase.from("products") as any).select(PRODUCT_SELECT).eq("published", true).limit(6);
+          if (strategy === "new-arrivals")   q = q.gte("created_at", cutoff).order("created_at", { ascending: false });
+          else if (strategy === "trending")  q = q.order("view_count", { ascending: false });
+          else                               q = q.order("buy_count",  { ascending: false });
+          q.then(({ data }: { data: unknown[] | null }) => {
+            const mapped = (data ?? []) as Parameters<typeof mapDbToProduct>[0][];
+            if (mapped.length >= 3) { setDbFetched(mapped.map(mapDbToProduct)); setDbLoading(false); return; }
+            // Fallback: most recent regardless of date window
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (supabase.from("products") as any).select(PRODUCT_SELECT).eq("published", true).order("created_at", { ascending: false }).limit(6)
+              .then(({ data: fb }: { data: unknown[] | null }) => {
+                setDbFetched(((fb ?? []) as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct));
+                setDbLoading(false);
+              });
+          });
+        });
+      return;
+    }
+
+    // order-based: fetch any IDs missing from static array
+    const missing = order.filter((id) => !ALL_PRODUCTS.find((p) => p.id === id));
+    if (!missing.length) { setDbLoading(false); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ((supabase.from("products") as any).select(PRODUCT_SELECT).in("id", missing).eq("published", true))
+      .then(({ data }: { data: unknown[] | null }) => {
+        if (data) setDbFetched((data as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct));
+        setDbLoading(false);
+      });
+  }, [strategy, order.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rawProducts: Product[] = productsProp
+    ?? (strategy
+      ? dbFetched
+      : order.map((id) => ALL_PRODUCTS.find((p) => p.id === id) ?? dbFetched.find((p) => p.id === id)).filter(Boolean) as Product[]);
+
   const [ratingsMap, setRatingsMap] = useState<Map<string, { rating: number; count: number }>>(new Map());
 
   useEffect(() => {
-    if (productsProp) return; // products from Supabase already carry their ratings
+    if (productsProp) return;
     const ids = rawProducts.map((p) => p.id);
     if (!ids.length) return;
     const supabase = createClient();
@@ -154,6 +208,8 @@ export function FeaturedProducts({ title, order = TRENDING, products: productsPr
     return real ? { ...p, rating: real.rating, reviews: real.count } : { ...p, reviews: 0 };
   });
 
+  const isLoading = loading || dbLoading;
+
   return (
     <section className={`w-full px-6 sm:px-8 lg:px-12 py-12 sm:py-16 ${className}`}>
       <div className="flex items-end justify-between mb-8">
@@ -162,7 +218,7 @@ export function FeaturedProducts({ title, order = TRENDING, products: productsPr
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-        {loading || products.length === 0
+        {isLoading || products.length === 0
           ? Array.from({ length: 6 }).map((_, i) => <ProductCardSkeleton key={i} />)
           : products.map((product, i) => (
               <ProductCard key={`${title}-${product.id}`} product={product} sectionTitle={title} index={i} />

@@ -67,6 +67,17 @@ export async function updateProduct(id: string, formData: FormData) {
   redirect("/admin/products");
 }
 
+export async function updateSiteSettings(formData: FormData) {
+  const supabase = await requireAdmin();
+  const str = (k: string) => (formData.get(k) as string | null) ?? "";
+  const pairs: { key: string; value: string }[] = [
+    { key: "featured_days_window", value: String(Math.max(1, parseInt(str("featured_days_window") || "30", 10) || 30)) },
+  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (supabase.from("site_settings") as any).upsert(pairs, { onConflict: "key" });
+  revalidatePath("/admin/settings");
+}
+
 export async function deleteProduct(id: string) {
   const supabase = await requireAdmin();
   await supabase.from("products").delete().eq("id", id);
