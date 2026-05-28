@@ -9,6 +9,7 @@ type Product = {
   name: string;
   category: string;
   price: number;
+  currency?: string;
   in_stock: boolean;
   stock_count: number;
   published: boolean;
@@ -134,7 +135,7 @@ export function ProductsTable({ products }: { products: Product[] }) {
                 </td>
                 <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{p.category}</td>
                 <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">
-                  ${p.price.toFixed(2)} USD
+                  {p.currency === "GHS" ? "GH₵" : "$"}{p.price.toFixed(2)} {p.currency ?? "USD"}
                 </td>
                 <td className="px-4 py-3 text-center">
                   <StockBadge count={p.stock_count} inStock={p.in_stock} />
@@ -203,7 +204,7 @@ export function ProductsTable({ products }: { products: Product[] }) {
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{p.category}</p>
                 <div className="flex items-center gap-4 text-sm">
-                  <span className="font-medium text-gray-900 dark:text-gray-100">${p.price.toFixed(2)} USD</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{p.currency === "GHS" ? "GH₵" : "$"}{p.price.toFixed(2)} {p.currency ?? "USD"}</span>
                   <span className="text-gray-400 text-xs">Stock: <StockBadge count={p.stock_count} inStock={p.in_stock} /></span>
                 </div>
               </div>

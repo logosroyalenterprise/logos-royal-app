@@ -108,13 +108,14 @@ export interface CurrencyCtx {
   symbol: string;
   name: string;
   rateFromUSD: number | null;
-  convert: (usdStr: string) => string;
+  convert: (priceStr: string, fromCurrency?: string) => string;
 }
 
 export function useLiveCurrency(country: string | null): CurrencyCtx {
   const detectedInfo = country ? (COUNTRY_CURRENCY[country] ?? null) : null;
   const [overrideCode, setOverrideCode] = useState<string | null>(null);
   const [rateFromUSD, setRateFromUSD] = useState<number | null>(null);
+  const [ghsPerUSD, setGhsPerUSD] = useState<number | null>(null);
 
   useEffect(() => {
     setOverrideCode(getPreferredCurrencyCode());
@@ -132,16 +133,34 @@ export function useLiveCurrency(country: string | null): CurrencyCtx {
   useEffect(() => {
     if (!currencyCode || currencyCode === "USD") { setRateFromUSD(1); return; }
     getRates().then((rates) => {
-      if (rates) setRateFromUSD(rates[currencyCode] ?? null);
+      if (rates) {
+        setRateFromUSD(rates[currencyCode] ?? null);
+        setGhsPerUSD(rates["GHS"] ?? null);
+      }
     });
   }, [currencyCode]);
 
-  function convert(usdStr: string): string {
-    if (!info || !rateFromUSD) return usdStr;
-    if (info.code === "USD") return usdStr;
-    const usd = parseFloat(usdStr.replace(/[^0-9.]/g, ""));
-    if (isNaN(usd)) return usdStr;
-    const converted = usd * rateFromUSD;
+  function convert(priceStr: string, fromCurrency = "USD"): string {
+    const amount = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
+    if (isNaN(amount)) return priceStr;
+
+    // Convert source to USD first
+    let usdAmount: number;
+    if (fromCurrency === "GHS") {
+      // Ghana user viewing a GHS-priced product — show as-is
+      if (info?.code === "GHS") {
+        return `GH₵${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      }
+      // Other users: GHS → USD → target
+      if (!ghsPerUSD) return `GH₵${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      usdAmount = amount / ghsPerUSD;
+    } else {
+      usdAmount = amount;
+    }
+
+    if (!info || !rateFromUSD) return `$${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (info.code === "USD") return `$${usdAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const converted = usdAmount * rateFromUSD;
     const isWhole = info.code === "JPY" || info.code === "KRW";
     const formatted = isWhole
       ? Math.round(converted).toLocaleString()

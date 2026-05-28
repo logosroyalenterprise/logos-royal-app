@@ -26,6 +26,7 @@ function extractProduct(fd: FormData) {
     id:           str("id").trim().toLowerCase().replace(/\s+/g, "-"),
     name:         str("name"),
     description:  str("description") || null,
+    currency:     str("currency") || "USD",
     price:        parseFloat(str("price")),
     shipping_fee: parseFloat(str("shipping_fee") || "0") || 0,
     category:     str("category"),

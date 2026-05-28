@@ -138,6 +138,7 @@ interface Props {
   action: (formData: FormData) => Promise<void>;
   initial?: {
     id?: string; name?: string; description?: string; price?: number;
+    currency?: string;
     category?: string; sub_category?: string; in_stock?: boolean;
     img?: string | null; images?: string[] | null; sizes?: string[] | null;
     highlights?: string[] | null; colors?: Color[] | null;
@@ -270,11 +271,20 @@ export function ProductForm({ action, initial, submitLabel = "Save Product" }: P
             placeholder="Describe the product…" className={textarea} />
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Field label="Price (USD)" hint="Enter price in US dollars. Shown to customers in their local currency.">
+          <Field label="Currency">
+            <div className="relative">
+              <select name="currency" defaultValue={initial?.currency ?? "USD"} className={`${input} appearance-none pr-8 cursor-pointer`}>
+                <option value="USD">USD — US Dollar ($)</option>
+                <option value="GHS">GHS — Ghanaian Cedi (GH₵)</option>
+              </select>
+              <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+          </Field>
+          <Field label="Price" hint="Enter amount in the selected currency.">
             <input name="price" type="number" step="0.01" min="0" defaultValue={initial?.price}
               required placeholder="0.00" className={input} />
           </Field>
-          <Field label="Shipping fee (USD)" hint="Charged per order, converted to customer's currency.">
+          <Field label="Shipping fee" hint="Charged per order, same currency as price.">
             <input name="shipping_fee" type="number" step="0.01" min="0"
               defaultValue={initial?.shipping_fee ?? 0}
               placeholder="0.00" className={input} />

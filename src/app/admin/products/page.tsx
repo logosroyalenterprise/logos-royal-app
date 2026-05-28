@@ -7,7 +7,7 @@ export default async function ProductsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: products } = await (supabase
     .from("products")
-    .select("id, name, category, price, in_stock, stock_count, published, rating, review_count")
+    .select("*")
     .order("created_at", { ascending: false }) as any);
 
   return (

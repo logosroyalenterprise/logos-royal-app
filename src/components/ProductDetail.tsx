@@ -250,8 +250,8 @@ export function ProductDetail({ product, restrictedCountries = null }: { product
 
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <p className="text-3xl font-black">{convert(product.price)}</p>
-                    {currencyCode !== "USD" && <p className="text-xs text-gray-400">{product.price} USD</p>}
+                    <p className="text-3xl font-black">{convert(product.price, product.currency)}</p>
+                    {currencyCode !== (product.currency ?? "USD") && <p className="text-xs text-gray-400">{product.price} {product.currency ?? "USD"}</p>}
                     <div className="flex items-center gap-1.5">
                       <span className="relative flex w-2 h-2">
                         {product.inStock && <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />}

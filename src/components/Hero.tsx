@@ -57,10 +57,12 @@ export function Hero() {
       if (!data) return;
       const dbSuggs = (data as { id: string; name: string }[]).filter((p) => !staticIds.has(p.id));
       setSuggestions((prev) => {
-        const merged = [...prev, ...dbSuggs];
-        return merged.slice(0, 6);
+        const seen = new Set(prev.map((s) => s.id));
+        const fresh = dbSuggs.filter((s) => !seen.has(s.id));
+        return [...prev, ...fresh].slice(0, 6);
       });
     }, 150);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [searchQuery]);
 
   function submit(q: string) {

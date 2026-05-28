@@ -4,6 +4,7 @@ export interface Product {
   category: string;
   subCategory?: string;
   price: string;
+  currency?: string;
   img: string;
   images?: string[];
   rating: number;
@@ -214,6 +215,7 @@ export function mapDbToProduct(p: any): Product {
     category: p.category,
     subCategory: p.sub_category ?? undefined,
     price: String(p.price),
+    currency: p.currency ?? "USD",
     img: p.img ?? "",
     images: p.images ?? undefined,
     rating: Number(p.rating ?? 0),

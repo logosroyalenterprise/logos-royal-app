@@ -47,7 +47,7 @@ export default async function DashboardPage() {
       <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-6">Dashboard</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
-        <StatCard label="Total Revenue" value={`GH₵${revenue.toFixed(2)}`} />
+        <StatCard label="Total Revenue" value={`$${revenue.toFixed(2)}`} />
         <StatCard label="Orders" value={orderCount ?? 0} />
         <StatCard label="Products" value={productCount ?? 0} />
         <StatCard label="Users" value={userCount ?? 0} />
@@ -77,7 +77,7 @@ export default async function DashboardPage() {
                       {o.status}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-right font-medium text-gray-900 dark:text-gray-100">GH₵{o.total.toFixed(2)}</td>
+                  <td className="px-5 py-3 text-right font-medium text-gray-900 dark:text-gray-100">${o.total.toFixed(2)}</td>
                 </tr>
               ))}
               {!recentOrders?.length && (
