@@ -270,11 +270,11 @@ export function ProductForm({ action, initial, submitLabel = "Save Product" }: P
             placeholder="Describe the product…" className={textarea} />
         </Field>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Field label="Price (GHS)">
+          <Field label="Price (USD)" hint="Enter price in US dollars. Shown to customers in their local currency.">
             <input name="price" type="number" step="0.01" min="0" defaultValue={initial?.price}
               required placeholder="0.00" className={input} />
           </Field>
-          <Field label="Shipping fee (GHS)" hint="Charged per order, shown to customer.">
+          <Field label="Shipping fee (USD)" hint="Charged per order, converted to customer's currency.">
             <input name="shipping_fee" type="number" step="0.01" min="0"
               defaultValue={initial?.shipping_fee ?? 0}
               placeholder="0.00" className={input} />
