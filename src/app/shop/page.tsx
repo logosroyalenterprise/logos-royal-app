@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useEffect, useRef } from "react";
+import { Suspense, useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
 import { ProductCard, ProductCardSkeleton } from "@/components/FeaturedProducts";
@@ -189,6 +189,8 @@ const SUB_CATEGORIES: Record<string, SubCategoryDef[]> = {
   ],
 };
 
+const PAGE_SIZE = 24;
+
 const PRICE_RANGES = [
   { label: "Under $50",    min: 0,   max: 50 },
   { label: "$50 – $100",  min: 50,  max: 100 },
@@ -231,6 +233,34 @@ function activeCount(f: Filters) {
 }
 
 function parsePrice(p: string) { return parseFloat(p.replace(/[^0-9.]/g, "")); }
+
+function buildHaystack(p: Product): string {
+  return [
+    p.name,
+    p.description,
+    p.category,
+    p.subCategory ?? "",
+    ...(p.highlights ?? []),
+    ...(p.colors?.map((c) => c.name) ?? []),
+    ...(p.sizes ?? []),
+    ...Object.values(p.attrs ?? {}).flat(),
+  ].join(" ").toLowerCase();
+}
+
+function matchesQuery(p: Product, terms: string[]): boolean {
+  if (!terms.length) return true;
+  const hay = buildHaystack(p);
+  return terms.every((t) => hay.includes(t));
+}
+
+function relevanceScore(p: Product, q: string, terms: string[]): number {
+  if (!q) return 0;
+  const name = p.name.toLowerCase();
+  if (name === q) return 3;
+  if (name.startsWith(q)) return 2;
+  if (name.includes(q)) return 1;
+  return 0;
+}
 
 function buildURL(f: Filters, q: string, s: string): string {
   const p = new URLSearchParams();
@@ -515,6 +545,38 @@ function ShopContent() {
 
   const allProducts = useMemo(() => [...ALL_PRODUCTS, ...dbProducts], [dbProducts]);
   const allCategories = useMemo(() => Array.from(new Set(allProducts.map((p) => p.category))), [allProducts]);
+  const queryTerms = useMemo(() => searchQuery.trim().toLowerCase().split(/\s+/).filter(Boolean), [searchQuery]);
+
+  // Immediate DB search — fires when user types so results appear before bulk load completes
+  const [liveSearchResults, setLiveSearchResults] = useState<Product[]>([]);
+  const liveSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!queryTerms.length) { setLiveSearchResults([]); return; }
+    if (liveSearchRef.current) clearTimeout(liveSearchRef.current);
+    liveSearchRef.current = setTimeout(() => {
+      const supabase = createClient();
+      const joined = queryTerms.join(" ");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (supabase.from("products") as any)
+        .select("id, name, category, sub_category, price, img, images, in_stock, description, colors, sizes, highlights, attrs, rating, review_count")
+        .or(`name.ilike.%${joined}%,description.ilike.%${joined}%,category.ilike.%${joined}%,sub_category.ilike.%${joined}%`)
+        .eq("published", true)
+        .limit(30)
+        .then(({ data }: { data: any[] | null }) => {
+          if (!data) return;
+          const knownIds = new Set(allProducts.map((p) => p.id));
+          setLiveSearchResults(data.filter((p) => !knownIds.has(p.id)).map(mapDbToProduct));
+        });
+    }, 300);
+    return () => { if (liveSearchRef.current) clearTimeout(liveSearchRef.current); };
+  }, [queryTerms]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Merge live search results into display pool (deduped)
+  const searchAugmented = useMemo(() => {
+    if (!liveSearchResults.length) return allProducts;
+    const ids = new Set(allProducts.map((p) => p.id));
+    return [...allProducts, ...liveSearchResults.filter((p) => !ids.has(p.id))];
+  }, [allProducts, liveSearchResults]);
 
   // Real ratings from Supabase (overrides static mock data)
   const [ratingsMap, setRatingsMap] = useState<Map<string, { rating: number; count: number }>>(new Map());
@@ -574,22 +636,20 @@ function ShopContent() {
   }, [searchParams]);
 
   const inferredSubCat = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return null;
-    const matches = allProducts.filter((p) => p.name.toLowerCase().includes(q) || (p.subCategory ?? "").toLowerCase().includes(q) || p.description.toLowerCase().includes(q));
+    if (!queryTerms.length) return null;
+    const matches = searchAugmented.filter((p) => matchesQuery(p, queryTerms));
     if (matches.length === 0) return null;
     const subCats = new Set(matches.map((p) => p.subCategory).filter(Boolean));
     return subCats.size === 1 ? (Array.from(subCats)[0] as string) : null;
-  }, [searchQuery]);
+  }, [queryTerms, searchAugmented]);
 
   const effectiveSubCat = filters.subCategory ?? inferredSubCat;
 
   const categoryCounts = useMemo(() => Object.fromEntries(
-    allCategories.map((cat) => [cat, allProducts.filter((p) => {
+    allCategories.map((cat) => [cat, searchAugmented.filter((p) => {
       if (blockedIds.has(p.id)) return false;
       if (p.category !== cat) return false;
-      const q = searchQuery.trim().toLowerCase();
-      if (q && !p.name.toLowerCase().includes(q) && !(p.subCategory ?? "").toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
+      if (!matchesQuery(p, queryTerms)) return false;
       if (filters.inStockOnly && !p.inStock) return false;
       if (filters.minRating && p.rating < filters.minRating) return false;
       if (filters.priceRange) {
@@ -599,13 +659,13 @@ function ShopContent() {
       }
       return true;
     }).length])
-  ), [allCategories, allProducts, blockedIds, searchQuery, filters.inStockOnly, filters.minRating, filters.priceRange, filters.customMin, filters.customMax]);
+  ), [allCategories, searchAugmented, blockedIds, queryTerms, filters.inStockOnly, filters.minRating, filters.priceRange, filters.customMin, filters.customMax]);
 
   const products = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    let list = allProducts.filter((p) => {
+    let list = searchAugmented.filter((p) => {
       if (blockedIds.has(p.id)) return false;
-      if (q && !p.name.toLowerCase().includes(q) && !(p.subCategory ?? "").toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
+      if (!matchesQuery(p, queryTerms)) return false;
       if (filters.categories.length && !filters.categories.includes(p.category)) return false;
       if (filters.subCategory && p.subCategory !== filters.subCategory) return false;
       if (filters.inStockOnly && !p.inStock) return false;
@@ -622,12 +682,30 @@ function ShopContent() {
       return true;
     });
     if (sort === "price-asc")  list = [...list].sort((a, b) => parsePrice(a.price) - parsePrice(b.price));
-    if (sort === "price-desc") list = [...list].sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
-    if (sort === "rating")     list = [...list].sort((a, b) => b.rating - a.rating);
-    if (sort === "name-asc")  list = [...list].sort((a, b) => a.name.localeCompare(b.name));
-    if (sort === "name-desc") list = [...list].sort((a, b) => b.name.localeCompare(a.name));
+    else if (sort === "price-desc") list = [...list].sort((a, b) => parsePrice(b.price) - parsePrice(a.price));
+    else if (sort === "rating")     list = [...list].sort((a, b) => b.rating - a.rating);
+    else if (sort === "name-asc")  list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    else if (sort === "name-desc") list = [...list].sort((a, b) => b.name.localeCompare(a.name));
+    else if (q) list = [...list].sort((a, b) => relevanceScore(b, q, queryTerms) - relevanceScore(a, q, queryTerms));
     return list;
-  }, [filters, sort, searchQuery]);
+  }, [filters, sort, searchQuery, queryTerms, searchAugmented, blockedIds]);
+
+  // Pagination: reset when results change, load more on scroll
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [products]);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMore = useCallback(() => {
+    setVisibleCount((n) => Math.min(n + PAGE_SIZE, products.length));
+  }, [products.length]);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadMore(); }, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [loadMore]);
+
+  const visibleProducts = products.slice(0, visibleCount);
 
   return (
     <>
@@ -646,7 +724,7 @@ function ShopContent() {
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Shop</h1>
-                <p className="text-sm text-gray-500 mt-0.5">{products.length} product{products.length !== 1 ? "s" : ""}</p>
+                <p className="text-sm text-gray-500 mt-0.5">{products.length} product{products.length !== 1 ? "s" : ""}{visibleCount < products.length ? ` (showing ${visibleCount})` : ""}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setDrawerOpen(true)} className="lg:hidden relative flex items-center gap-2 px-4 py-1.5 text-xs font-semibold rounded-full border-2 border-blue-950 dark:border-blue-200 text-blue-950 dark:text-blue-200 hover:bg-blue-950/5 transition-colors">
@@ -698,13 +776,20 @@ function ShopContent() {
                   <button onClick={() => { setFilters(DEFAULT_FILTERS); setSearchQuery(""); setSort("default"); }} className="text-xs font-semibold px-4 py-2 rounded-full border-2 border-blue-950 dark:border-blue-200 text-blue-950 dark:text-blue-200 hover:bg-blue-950 hover:text-white dark:hover:bg-blue-200 dark:hover:text-blue-950 transition-colors">Clear filters</button>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {products.map((product, i) => {
-                    const real = ratingsMap.get(product.id);
-                    const p = real ? { ...product, rating: real.rating, reviews: real.count } : { ...product, reviews: 0 };
-                    return <ProductCard key={product.id} product={p} sectionTitle="shop" index={i} />;
-                  })}
-                </div>
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {visibleProducts.map((product, i) => {
+                      const real = ratingsMap.get(product.id);
+                      const p = real ? { ...product, rating: real.rating, reviews: real.count } : { ...product, reviews: 0 };
+                      return <ProductCard key={product.id} product={p} sectionTitle="shop" index={i} />;
+                    })}
+                  </div>
+                  {visibleCount < products.length && (
+                    <div ref={sentinelRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mt-4">
+                      {Array.from({ length: Math.min(PAGE_SIZE, products.length - visibleCount) }).map((_, i) => <ProductCardSkeleton key={i} />)}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

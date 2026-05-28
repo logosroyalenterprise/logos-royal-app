@@ -2,11 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AvatarPicker } from "@/components/AvatarPicker";
 import { CategoriesMenu } from "@/components/CategoriesMenu";
 import { useUserData } from "@/context/UserDataContext";
+import { createClient } from "@/lib/supabase/client";
+import { ALL_PRODUCTS } from "@/data/products";
 
 function SavedIcon() {
   return (
@@ -32,10 +34,60 @@ const NAV_LINKS = [
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const { bagCount } = useUserData();
   const [scrolled, setScrolled] = useState(false);
-  const [navQuery, setNavQuery] = useState("");
-  const [mobileQuery, setMobileQuery] = useState("");
+  const [headerQuery, setHeaderQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<{ id: string; name: string }[]>([]);
+  const headerQueryRef = useRef("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function submitSearch(q: string) {
+    const trimmed = q.trim();
+    if (!trimmed) return;
+    setSuggestions([]);
+    router.push(`/shop?q=${encodeURIComponent(trimmed)}`);
+  }
+
+  function changeQuery(q: string) {
+    setHeaderQuery(q);
+    headerQueryRef.current = q;
+    window.dispatchEvent(new CustomEvent("nav-query", { detail: q }));
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const trimmed = q.trim().toLowerCase();
+    if (trimmed.length < 1) { setSuggestions([]); return; }
+    // Phase 1: instant static results
+    const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+    const staticSuggs = ALL_PRODUCTS
+      .filter((p) => p.name.toLowerCase().includes(trimmed) || p.description.toLowerCase().includes(trimmed) || p.category.toLowerCase().includes(trimmed))
+      .slice(0, 6)
+      .map((p) => ({ id: p.id, name: p.name }));
+    setSuggestions(staticSuggs);
+    // Phase 2: augment with DB results
+    debounceRef.current = setTimeout(async () => {
+      const supabase = createClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data } = await (supabase.from("products") as any)
+        .select("id, name")
+        .or(`name.ilike.%${trimmed}%,description.ilike.%${trimmed}%,category.ilike.%${trimmed}%,sub_category.ilike.%${trimmed}%`)
+        .eq("published", true)
+        .limit(6);
+      if (!data) return;
+      const dbSuggs = (data as { id: string; name: string }[]).filter((p) => !staticIds.has(p.id));
+      setSuggestions((prev) => [...prev, ...dbSuggs].slice(0, 6));
+    }, 150);
+  }
+
+  // Sync from Hero
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const q = (e as CustomEvent<string>).detail;
+      if (q !== headerQueryRef.current) { setHeaderQuery(q); headerQueryRef.current = q; }
+    };
+    window.addEventListener("hero-query", handler);
+    return () => window.removeEventListener("hero-query", handler);
+  }, []);
+
   const [logoRight, setLogoRight] = useState(220);
   const [pillWidth, setPillWidth] = useState(560);
   const [viewportWidth, setViewportWidth] = useState(1200);
@@ -149,16 +201,29 @@ export function Header() {
               type="search"
               aria-label="Search products"
               placeholder="Search or browse categories"
-              value={navQuery}
-              onChange={(e) => setNavQuery(e.target.value)}
+              value={headerQuery}
+              onChange={(e) => changeQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitSearch(headerQuery)}
               className="w-full pl-5 pr-10 rounded-full border-2 border-blue-950 dark:border-blue-200 bg-white/70 dark:bg-gray-900/70 backdrop-blur-sm text-sm focus:outline-none focus:border-[3px] transition-all"
               style={{ height: pillRef.current ? pillRef.current.offsetHeight : 47 }}
             />
-            <button className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-blue-300 hover:bg-blue-400 dark:bg-blue-700 text-blue-950 dark:text-blue-50 rounded-full transition-colors" aria-label="Search">
+            <button onClick={() => submitSearch(headerQuery)} className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-blue-300 hover:bg-blue-400 dark:bg-blue-700 text-blue-950 dark:text-blue-50 rounded-full transition-colors" aria-label="Search">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                 <circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/>
               </svg>
             </button>
+            {suggestions.length > 0 && (
+              <ul className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-900 rounded-2xl overflow-hidden [box-shadow:0_4px_24px_rgba(0,0,0,0.12)] z-999">
+                {suggestions.map((s) => (
+                  <li key={s.id}>
+                    <button className="w-full text-left px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                      onMouseDown={() => { setSuggestions([]); router.push(`/product/${s.id}`); }}>
+                      {s.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 
@@ -169,11 +234,13 @@ export function Header() {
               type="search"
               aria-label="Search products"
               placeholder="Search for something..."
-              value={mobileQuery}
-              onChange={(e) => setMobileQuery(e.target.value)}
+              value={headerQuery}
+              onChange={(e) => changeQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submitSearch(headerQuery)}
               className="w-full pl-5 pr-12 py-2 rounded-full border-2 border-blue-950 dark:border-blue-200 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm text-sm focus:outline-none focus:border-[3px] transition-all"
             />
             <button
+              onClick={() => submitSearch(headerQuery)}
               aria-label="Search"
               className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2 bg-blue-300 hover:bg-blue-400 dark:bg-blue-700 text-blue-950 dark:text-blue-50 rounded-full transition-colors"
             >
@@ -181,6 +248,18 @@ export function Header() {
                 <circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/>
               </svg>
             </button>
+            {suggestions.length > 0 && (
+              <ul className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-gray-900 rounded-2xl overflow-hidden [box-shadow:0_4px_24px_rgba(0,0,0,0.12)] z-999">
+                {suggestions.map((s) => (
+                  <li key={s.id}>
+                    <button className="w-full text-left px-4 py-2.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                      onMouseDown={() => { setSuggestions([]); router.push(`/product/${s.id}`); }}>
+                      {s.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 

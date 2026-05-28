@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FloatingCards } from "@/components/FloatingCards";
 import { createClient } from "@/lib/supabase/client";
+import { ALL_PRODUCTS } from "@/data/products";
 
 export function Hero() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -11,6 +12,21 @@ export function Hero() {
   const [suggestions, setSuggestions] = useState<{ id: string; name: string }[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
+  const searchQueryRef = useRef("");
+
+  // Sync with Header nav search
+  useEffect(() => {
+    searchQueryRef.current = searchQuery;
+    window.dispatchEvent(new CustomEvent("hero-query", { detail: searchQuery }));
+  }, [searchQuery]);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const q = (e as CustomEvent<string>).detail;
+      if (q !== searchQueryRef.current) setSearchQuery(q);
+    };
+    window.addEventListener("nav-query", handler);
+    return () => window.removeEventListener("nav-query", handler);
+  }, []);
 
   useEffect(() => {
     const handler = () => setScrolled(window.scrollY > 80);
@@ -20,18 +36,31 @@ export function Hero() {
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    const q = searchQuery.trim();
-    if (q.length < 2) { setSuggestions([]); return; }
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 1) { setSuggestions([]); return; }
+    // Phase 1: instant static results
+    const staticIds = new Set(ALL_PRODUCTS.map((p) => p.id));
+    const staticSuggs = ALL_PRODUCTS
+      .filter((p) => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.category.toLowerCase().includes(q))
+      .slice(0, 6)
+      .map((p) => ({ id: p.id, name: p.name }));
+    setSuggestions(staticSuggs);
+    // Phase 2: augment with DB results
     debounceRef.current = setTimeout(async () => {
       const supabase = createClient();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data } = await (supabase.from("products") as any)
         .select("id, name")
-        .ilike("name", `%${q}%`)
+        .or(`name.ilike.%${q}%,description.ilike.%${q}%,category.ilike.%${q}%,sub_category.ilike.%${q}%`)
         .eq("published", true)
         .limit(6);
-      setSuggestions((data ?? []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })));
-    }, 250);
+      if (!data) return;
+      const dbSuggs = (data as { id: string; name: string }[]).filter((p) => !staticIds.has(p.id));
+      setSuggestions((prev) => {
+        const merged = [...prev, ...dbSuggs];
+        return merged.slice(0, 6);
+      });
+    }, 150);
   }, [searchQuery]);
 
   function submit(q: string) {
