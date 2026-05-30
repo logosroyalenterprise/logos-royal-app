@@ -41,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       </aside>
 
       {/* Mobile top header */}
-      <header className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 px-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+      <header className="md:hidden fixed top-0 left-0 right-0 z-50 h-14 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] flex items-center justify-between border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
         <Link href="/admin/dashboard" className="text-sm font-bold text-blue-950 dark:text-blue-100 tracking-tight">
           Logos Royal<span className="text-blue-500 ml-1 font-normal text-xs">Admin</span>
         </Link>

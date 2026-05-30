@@ -140,28 +140,76 @@ export function FeaturedProducts({ title, order = TRENDING, products: productsPr
     const supabase = createClient();
 
     if (strategy) {
-      // Fetch days window from site_settings then query accordingly
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (supabase.from("site_settings") as any).select("value").eq("key", "featured_days_window").maybeSingle()
-        .then(({ data: cfg }: { data: { value: string } | null }) => {
+        .then(async ({ data: cfg }: { data: { value: string } | null }) => {
           const days = Math.max(1, parseInt(cfg?.value ?? "30", 10) || 30);
           const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let q = (supabase.from("products") as any).select(PRODUCT_SELECT).eq("published", true).limit(6);
-          if (strategy === "new-arrivals")   q = q.gte("created_at", cutoff).order("created_at", { ascending: false });
-          else if (strategy === "trending")  q = q.order("view_count", { ascending: false });
-          else                               q = q.order("buy_count",  { ascending: false });
-          q.then(({ data }: { data: unknown[] | null }) => {
-            const mapped = (data ?? []) as Parameters<typeof mapDbToProduct>[0][];
-            if (mapped.length >= 3) { setDbFetched(mapped.map(mapDbToProduct)); setDbLoading(false); return; }
-            // Fallback: most recent regardless of date window
+
+          if (strategy === "new-arrivals") {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (supabase.from("products") as any).select(PRODUCT_SELECT).eq("published", true).order("created_at", { ascending: false }).limit(6)
-              .then(({ data: fb }: { data: unknown[] | null }) => {
-                setDbFetched(((fb ?? []) as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct));
-                setDbLoading(false);
-              });
+            const { data } = await (supabase.from("products") as any)
+              .select(PRODUCT_SELECT + ", created_at").eq("published", true)
+              .gte("created_at", cutoff).order("created_at", { ascending: false }).limit(6);
+            const mapped = ((data ?? []) as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct);
+            if (mapped.length >= 3) { setDbFetched(mapped); setDbLoading(false); return; }
+            // fallback: most recent regardless of window
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: fb } = await (supabase.from("products") as any)
+              .select(PRODUCT_SELECT).eq("published", true).order("created_at", { ascending: false }).limit(6);
+            setDbFetched(((fb ?? []) as Parameters<typeof mapDbToProduct>[0][]).map(mapDbToProduct));
+            setDbLoading(false);
+            return;
+          }
+
+          // Parallel data fetch for scoring
+          const [{ data: allItems }, { data: recentItems }, { data: recentRevs }, { data: prods }] = await Promise.all([
+            // all-time order items (product_id only)
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (supabase.from("order_items") as any).select("product_id"),
+            // recent order items within window
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (supabase.from("order_items") as any).select("product_id").gte("created_at", cutoff),
+            // recent reviews within window
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (supabase.from("reviews") as any).select("product_id").gte("created_at", cutoff),
+            // all published products with base stats
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (supabase.from("products") as any).select(PRODUCT_SELECT + ", created_at").eq("published", true),
+          ]);
+
+          type Row = { product_id: string };
+          const count = (rows: Row[] | null, id: string) =>
+            (rows ?? []).filter((r) => r.product_id === id).length;
+
+          const products = (prods ?? []) as (Parameters<typeof mapDbToProduct>[0] & { created_at: string })[];
+
+          const scored = products.map((p) => {
+            const allOrders    = count(allItems as Row[], p.id);
+            const recentOrders = count(recentItems as Row[], p.id);
+            const recentReviews = count(recentRevs as Row[], p.id);
+            const isNew        = p.created_at >= cutoff ? 1 : 0;
+            const rating       = Number(p.rating ?? 0);
+            const reviewCount  = Number(p.review_count ?? 0);
+
+            const score = strategy === "trending"
+              ? recentOrders * 3 + recentReviews * 2 + rating * 1 + isNew * 2
+              : /* best-selling */ allOrders * 2 + recentOrders * 1.5 + reviewCount * 0.5;
+
+            return { p, score };
           });
+
+          const top6 = scored
+            .sort((a, b) => b.score - a.score || (
+              strategy === "trending"
+                ? new Date(b.p.created_at).getTime() - new Date(a.p.created_at).getTime()
+                : Number(b.p.review_count ?? 0) - Number(a.p.review_count ?? 0)
+            ))
+            .slice(0, 6)
+            .map(({ p }) => mapDbToProduct(p));
+
+          setDbFetched(top6);
+          setDbLoading(false);
         });
       return;
     }
